@@ -1,0 +1,7 @@
+# Get all free ranges that are at least 500MB,
+# pagefile.sys will be ignored (considered free space)
+# Then sort them by size, descending
+./ntfsfree -m 50000000 -p /tmp/test.ntfs | sort -r -k 4,4 -n -b
+
+# Human readable listing of all free ranges of at least 1MB
+./ntfsfree -m 1000000 -h /dev/sda5
