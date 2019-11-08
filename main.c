@@ -22,6 +22,7 @@ static struct {
 	int brief;
 	int force;
 	int pagefile;
+	int output_block_size;
 	char *device;
 } options;
 
@@ -37,8 +38,9 @@ static int get_pagefile_clusters(ntfs_volume *vol);
 //
 static int parse_options(int argc, char **argv)
 {
-	static const char *sopt = "-m:hbfp";
+	static const char *sopt = "-m:hbfps:";
 	static const struct option lopt[] = {
+		{ "block-size", required_argument,      NULL, 's' },
 		{ "min-size",	required_argument,	NULL, 'm' },
 		{ "human-readable",	no_argument,	NULL, 'h' },
 		{ "brief",	no_argument,		NULL, 'b' },
@@ -58,6 +60,7 @@ static int parse_options(int argc, char **argv)
 	options.brief = 0;
 	options.force = 0;
 	options.pagefile = 0;
+	options.output_block_size = 1;
 	options.device = NULL;
 
 	while ((c = getopt_long(argc, argv, sopt, lopt, NULL)) != -1) {
@@ -86,6 +89,9 @@ static int parse_options(int argc, char **argv)
 		case 'p':
 			options.pagefile = 1;
 			break;
+		case 's':
+			options.output_block_size = strtol(optarg, &end, 0);
+			break;
 		default:
 			ntfs_log_error("Unknown option '%s'.\n", argv[optind-1]);
 			help = 1;
@@ -94,8 +100,8 @@ static int parse_options(int argc, char **argv)
 		if (help) break;
 	}
 
-	if (help || options.min_size < 0) {
-		ntfs_log_error("Usage: %s [-m|--min-size <bytes>] [-h|--human-readable] [-b|--brief] [-p|--pagefile] <device>\n", argv[0]);
+	if (help || options.min_size < 0 || options.output_block_size < 1) {
+		ntfs_log_error("Usage: %s [-m|--min-size <bytes>] [-h|--human-readable] [-b|--brief] [-p|--pagefile] [-s|--block-size <bytes>] <device>\n", argv[0]);
 	}
 
 	return help;
@@ -123,6 +129,10 @@ int main(int argc, char **argv)
 	if (vol == NULL) {
 		ntfs_log_error("Device '%s' not found.\n", options.device);
 		return 1;
+	}
+	if (options.human) {
+		ntfs_log_info("# Clustersize %u\n", (unsigned int)vol->cluster_size);
+		ntfs_log_info("# Output block size %u\n", (unsigned int)options.output_block_size);
 	}
 	options.min_size /= vol->cluster_size;
 	if (options.pagefile) {
@@ -292,6 +302,9 @@ static int utils_cluster_in_use(ntfs_volume *vol, long long lcn)
 	return (buffer[byte] & bit);
 }
 
+#define TOBLOCK(x) ( (x) * vol->cluster_size / options.output_block_size )
+#define TOSIZE(x) ( options.human ? ( (x) / (1024 * 1024 / vol->cluster_size) ) : TOBLOCK(x) )
+
 static int scan_free_space(ntfs_volume *vol)
 {
 	s64 i, j;
@@ -331,7 +344,7 @@ static int scan_free_space(ntfs_volume *vol)
 			if (curStart != -1) {
 				if (i - curStart > options.min_size) {
 					if (message != NULL) {
-						ntfs_log_info(message, (long long)curStart, (long long)i, (long long)((i - curStart) / (1024ll * 1024ll / vol->cluster_size)));
+						ntfs_log_info(message, (long long)TOBLOCK(curStart), (long long)TOBLOCK(i), (long long)TOSIZE(i - curStart));
 					}
 					if (i - curStart > end - start) {
 						start = curStart;
@@ -346,7 +359,7 @@ static int scan_free_space(ntfs_volume *vol)
 	}
 
 	if (summary != NULL) {
-		ntfs_log_info("Biggest range from %lld to %lld, %lldMiB\n", (long long)start, (long long)end, (long long)((end - start) / (1024ll * 1024ll / vol->cluster_size)));
+		ntfs_log_info("Biggest range from %lld to %lld, %lldMiB\n", (long long)TOBLOCK(start), (long long)TOBLOCK(end), (long long)TOSIZE(end - start));
 	}
 	return 1;
 }
@@ -374,19 +387,19 @@ static int get_pagefile_clusters(ntfs_volume *vol)
 
 	/* The $DATA attribute of the pagefile.sys has to be non-resident. */
 	if (!NAttrNonResident(na)) {
-		ntfs_log_debug("pagefile.sys $DATA attribute is resident!?!\n");
+		ntfs_log_warning("pagefile.sys $DATA attribute is resident!?!\n");
 		goto error_exit;
 	}
 
 	/* Get length of pagefile.sys contents. */
 	clusters = (na->data_size + (vol->cluster_size - 1)) / vol->cluster_size;
 	if (clusters == 0) {
-		ntfs_log_debug("pagefile.sys has zero length.\n");
+		ntfs_log_warning("pagefile.sys has zero length.\n");
 		goto real_exit;
 	}
 
 	if ((na->data_flags & ATTR_COMPRESSION_MASK) != const_cpu_to_le16(0)) {
-		ntfs_log_debug("pagefile.sys is compressed!?\n");
+		ntfs_log_warning("pagefile.sys is compressed!?\n");
 		goto real_exit;
 	}
 	ntfs_attr_close(na);
