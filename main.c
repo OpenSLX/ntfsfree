@@ -136,6 +136,11 @@ int main(int argc, char **argv)
 	if (options.human) {
 		ntfs_log_info("# Clustersize %u\n", (unsigned int)vol->cluster_size);
 		ntfs_log_info("# Output block size %u\n", (unsigned int)options.output_block_size);
+		if (options.min_size >= 1024 * 1024) {
+			ntfs_log_info("# Minimum range size: %lldMiB\n", (long long)options.min_size / (1024 * 1024));
+		} else {
+			ntfs_log_info("# Minimum range size: %lldKiB\n", (long long)options.min_size / 1024);
+		}
 	}
 	options.min_size /= vol->cluster_size;
 	if (options.pagefile) {
