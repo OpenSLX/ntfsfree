@@ -9,7 +9,7 @@
 #include <ntfs-3g/volume.h>
 #include <ntfs-3g/dir.h>
 
-#define PFMAX (10)
+#define PFMAX (100)
 static struct {
 	s64 from;
 	s64 to;
@@ -98,6 +98,9 @@ static int parse_options(int argc, char **argv)
 			break;
 		}
 		if (help) break;
+	}
+	if (options.device == NULL) {
+		help = 1;
 	}
 
 	if (help || options.min_size < 0 || options.output_block_size < 1) {
@@ -412,7 +415,7 @@ static int get_pagefile_clusters(ntfs_volume *vol)
 		if (rec->non_resident) {
 			runs = ntfs_mapping_pairs_decompress(vol, rec, NULL);
 			if (runs) {
-				for (i = 0; runs[i].length > 0; i++) {
+				for (i = 0; pfcount < PFMAX && runs[i].length > 0; i++) {
 					pagefile[pfcount].from = runs[i].lcn;
 					pagefile[pfcount].to = runs[i].lcn + (runs[i].length - 1);
 					pfcount++;
